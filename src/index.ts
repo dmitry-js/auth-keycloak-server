@@ -11,11 +11,25 @@ import {
     REDIRECT_URI,
     API_BASE_URL,
     APP_URL,
+    REDIS_HOST,
+    REDIS_PORT,
+    REDIS_PASSWORD,
     refreshTokens,
 } from './utils';
 
+// Initialize Redis with configuration
+const redis = new Redis({
+    host: REDIS_HOST,
+    port: REDIS_PORT,
+    password: REDIS_PASSWORD,
+});
+
+// Handle Redis connection errors
+redis.on('error', (err) => {
+    console.error('Redis connection error:', err.message);
+});
+
 const app = express();
-const redis = new Redis();
 
 // Middleware
 app.use(cookieParser());
@@ -101,10 +115,16 @@ app.get('/auth/validate', async (req, res) => {
         return res.status(401).json({ isAuthenticated: false });
     }
 
-    const cacheKey = `userinfo:${token}`;
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-        return res.json(JSON.parse(cached));
+    // Try to get cached user info
+    let cached: string | null = null;
+    try {
+        const cacheKey = `userinfo:${token}`;
+        cached = await redis.get(cacheKey);
+        if (cached) {
+            return res.json(JSON.parse(cached));
+        }
+    } catch (redisError) {
+        console.warn('Redis cache unavailable, proceeding without cache:', redisError);
     }
 
     try {
@@ -113,7 +133,15 @@ app.get('/auth/validate', async (req, res) => {
             { headers: { Authorization: `Bearer ${token}` } }
         );
         const data = { isAuthenticated: true, user: response.data };
-        await redis.set(cacheKey, JSON.stringify(data), 'EX', 300);
+
+        // Cache the result if Redis is available
+        try {
+            const cacheKey = `userinfo:${token}`;
+            await redis.set(cacheKey, JSON.stringify(data), 'EX', 300);
+        } catch (redisError) {
+            console.warn('Failed to cache userinfo in Redis:', redisError);
+        }
+
         res.json(data);
     } catch (error: any) {
         if (error.response?.status === 401 && refreshToken) {
@@ -128,7 +156,14 @@ app.get('/auth/validate', async (req, res) => {
                     { headers: { Authorization: `Bearer ${tokens.access_token}` } }
                 );
                 const newData = { isAuthenticated: true, user: response.data };
-                await redis.set(`userinfo:${tokens.access_token}`, JSON.stringify(newData), 'EX', 300);
+
+                // Cache the result if Redis is available
+                try {
+                    await redis.set(`userinfo:${tokens.access_token}`, JSON.stringify(newData), 'EX', 300);
+                } catch (redisError) {
+                    console.warn('Failed to cache userinfo in Redis:', redisError);
+                }
+
                 res.json(newData);
             } catch (retryError) {
                 console.error('Retry userinfo error:', retryError);

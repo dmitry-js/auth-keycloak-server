@@ -17,6 +17,11 @@ export const REDIRECT_URI = `${BASE_URL}/auth/callback`;
 export const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8080/api/v1';
 export const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 
+// Redis config
+export const REDIS_HOST = process.env.REDIS_HOST || 'localhost';
+export const REDIS_PORT = parseInt(process.env.REDIS_PORT) || 6379;
+export const REDIS_PASSWORD = process.env.REDIS_PASSWORD || undefined;
+
 // Helper: Refresh tokens
 export async function refreshTokens(refreshToken: string, res: Response): Promise<{ access_token: string, refresh_token: string } | null> {
     try {
